@@ -11,7 +11,7 @@ type RawPlayer = {
   pid: number;
   title: string;
   short_name: string;
-  playing_role: string;
+  playing_role: 'wk' | 'bat' | 'all' | 'bowl';
   fantasy_player_rating: number | string;
   country: string;
 };
@@ -19,16 +19,16 @@ type RawPlayer = {
 type RawSquad = {
   team_id: number;
   title: string;
-  team?: { abbr?: string };
-  players?: RawPlayer[];
+  team: { abbr: string };
+  players: RawPlayer[];
 };
 
-function normalizeRole(role: string): 'WK' | 'BAT' | 'AR' | 'BOWL' {
-  if (role === 'wk') return 'WK';
-  if (role === 'bat') return 'BAT';
-  if (role === 'all') return 'AR';
-  return 'BOWL';
-}
+const roleMap: Record<RawPlayer['playing_role'], 'WK' | 'BAT' | 'AR' | 'BOWL'> = {
+  wk: 'WK',
+  bat: 'BAT',
+  all: 'AR',
+  bowl: 'BOWL'
+};
 
 function normalizeCredits(rating: number, minRating: number, maxRating: number): number {
   if (Number.isNaN(rating)) return 6;
@@ -55,7 +55,7 @@ export async function GET() {
 
     const allRatings: number[] = [];
     squads.forEach((squad) => {
-      (squad.players ?? []).forEach((player) => {
+      squad.players.forEach((player) => {
         const rating = Number(player.fantasy_player_rating);
         if (!Number.isNaN(rating)) allRatings.push(rating);
       });
@@ -65,9 +65,7 @@ export async function GET() {
     const maxRating = allRatings.length > 0 ? Math.max(...allRatings) : 0;
 
     const players = squads.flatMap((squad) => {
-      const team = squad.team?.abbr ?? squad.title;
-
-      return (squad.players ?? []).map((player) => {
+      return squad.players.map((player) => {
         const rating = Number(player.fantasy_player_rating);
 
         return {
@@ -75,13 +73,15 @@ export async function GET() {
           name: player.title,
           short_name: player.short_name,
           team_id: squad.team_id,
-          team,
-          role: normalizeRole(player.playing_role),
+          team: squad.team.abbr,
+          role: roleMap[player.playing_role],
           credit: normalizeCredits(rating, minRating, maxRating),
           is_overseas: player.country !== 'India'
         };
       });
     });
+
+    console.log(JSON.stringify(data, null, 2));
 
     return NextResponse.json(players);
   } catch {
