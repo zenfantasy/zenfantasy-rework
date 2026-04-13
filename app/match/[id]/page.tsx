@@ -1,200 +1,133 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
-import { Match, Player } from '@/lib/types';
+import { useParams } from 'next/navigation';
 
-type SavedTeamResponse = { ok: boolean; message: string };
-
-const roleLimits = {
-  WK: { min: 1, max: 4 },
-  BAT: { min: 3, max: 6 },
-  AR: { min: 1, max: 4 },
-  BOWL: { min: 3, max: 6 }
+type SquadPlayer = {
+  player_id: number;
+  name: string;
+  short_name: string;
+  team_id: number;
+  team: string;
+  role: 'WK' | 'BAT' | 'AR' | 'BOWL';
+  credit: number;
+  is_overseas: boolean;
 };
 
 export default function TeamBuilderPage() {
   const params = useParams<{ id: string }>();
-  const searchParams = useSearchParams();
-  const user = searchParams.get('user') ?? 'guest';
-
-  const [match, setMatch] = useState<Match | null>(null);
-  const [players, setPlayers] = useState<Player[]>([]);
+  const [players, setPlayers] = useState<SquadPlayer[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
-  const [captain, setCaptain] = useState<number | null>(null);
-  const [viceCaptain, setViceCaptain] = useState<number | null>(null);
+  const [error, setError] = useState<string>('');
   const [message, setMessage] = useState<string>('');
 
   useEffect(() => {
-    const loadData = async () => {
-      const [matchesRes, squadsRes] = await Promise.all([
-        fetch('/api/matches', { cache: 'no-store' }),
-        fetch('/api/squads', { cache: 'no-store' })
-      ]);
-
-      const matchesData = (await matchesRes.json()) as { matches: Match[] };
-      const squadsData = (await squadsRes.json()) as { players: Player[] };
-
-      setMatch(matchesData.matches.find((m) => String(m.id) === params.id) ?? null);
-      setPlayers(squadsData.players);
+    const loadSquads = async () => {
+      const res = await fetch('/api/squads', { cache: 'no-store' });
+      const data = (await res.json()) as SquadPlayer[];
+      setPlayers(data);
     };
 
-    loadData();
-  }, [params.id]);
+    loadSquads();
+  }, []);
 
   const creditsUsed = useMemo(() => {
-    return selected.reduce((sum, id) => {
-      const player = players.find((p) => p.id === id);
+    return selected.reduce((sum, playerId) => {
+      const player = players.find((p) => p.player_id === playerId);
       return sum + (player?.credit ?? 0);
     }, 0);
-  }, [selected, players]);
+  }, [players, selected]);
 
-  const roleCount = useMemo(() => {
-    const counters = { WK: 0, BAT: 0, AR: 0, BOWL: 0 };
-    selected.forEach((id) => {
-      const player = players.find((p) => p.id === id);
-      if (player) counters[player.role] += 1;
-    });
-    return counters;
-  }, [selected, players]);
+  const hasValidationError = selected.length > 11 || creditsUsed > 100;
 
-  const teamCount = useMemo(() => {
-    const counts: Record<string, number> = {};
-    selected.forEach((id) => {
-      const player = players.find((p) => p.id === id);
-      if (!player) return;
-      counts[player.team] = (counts[player.team] ?? 0) + 1;
-    });
-    return counts;
-  }, [selected, players]);
-
-  const isLocked = useMemo(() => {
-    if (!match) return false;
-    return Date.now() > new Date(match.startTimeIst).getTime();
-  }, [match]);
-
-  function togglePlayer(playerId: number) {
-    if (isLocked) return;
-
-    if (selected.includes(playerId)) {
-      setSelected((prev) => prev.filter((id) => id !== playerId));
-      if (captain === playerId) setCaptain(null);
-      if (viceCaptain === playerId) setViceCaptain(null);
+  useEffect(() => {
+    if (selected.length > 11) {
+      setError('You can select maximum 11 players.');
       return;
     }
 
-    if (selected.length >= 11) return setMessage('You can only select 11 players.');
-
-    const player = players.find((p) => p.id === playerId);
-    if (!player) return;
-
-    if (creditsUsed + player.credit > 100) return setMessage('Credit limit is 100.');
-
-    const currentFromTeam = teamCount[player.team] ?? 0;
-    if (currentFromTeam >= 7) return setMessage('Max 7 players from one real team.');
-
-    setMessage('');
-    setSelected((prev) => [...prev, playerId]);
-  }
-
-  function validateBeforeSave(): string | null {
-    if (selected.length !== 11) return 'Select exactly 11 players.';
-
-    for (const [role, limits] of Object.entries(roleLimits)) {
-      const count = roleCount[role as keyof typeof roleCount];
-      if (count < limits.min || count > limits.max) {
-        return `${role} must be between ${limits.min} and ${limits.max}.`;
-      }
+    if (creditsUsed > 100) {
+      setError('You can use maximum 100 credits.');
+      return;
     }
 
-    if (!captain || !viceCaptain) return 'Select captain and vice captain.';
-    if (captain === viceCaptain) return 'Captain and vice captain must be different.';
-    return null;
+    setError('');
+  }, [selected.length, creditsUsed]);
+
+  function togglePlayer(playerId: number) {
+    setMessage('');
+
+    setSelected((prev) => {
+      if (prev.includes(playerId)) {
+        return prev.filter((id) => id !== playerId);
+      }
+
+      return [...prev, playerId];
+    });
   }
 
-  async function saveTeam() {
-    const validationError = validateBeforeSave();
-    if (validationError) return setMessage(validationError);
+  async function handleSaveTeam() {
+    setMessage('');
+
+    if (hasValidationError) {
+      setMessage('Fix validation errors before saving.');
+      return;
+    }
+
+    if (selected.length !== 11) {
+      setMessage('Please select exactly 11 players to save your team.');
+      return;
+    }
+
+    const payload = {
+      user_id: 'devansh',
+      match_id: Number(params.id),
+      players: selected,
+      captain: selected[0],
+      vice_captain: selected[1]
+    };
 
     const res = await fetch('/api/save-team', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        user,
-        matchId: Number(params.id),
-        playerIds: selected,
-        captain,
-        viceCaptain
-      })
+      body: JSON.stringify(payload)
     });
 
-    const payload = (await res.json()) as SavedTeamResponse;
-    setMessage(payload.message);
+    const data = (await res.json()) as { ok: boolean; message: string };
+    setMessage(data.message);
   }
 
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-bold">Team Builder - Match {params.id}</h1>
-      <p className="text-sm text-slate-400">User: {user}</p>
-      {isLocked ? <p className="rounded bg-red-900/50 p-2 text-sm">Team is locked after match start.</p> : null}
 
       <section className="card space-y-1 text-sm">
-        <p>Selected: {selected.length}/11</p>
-        <p>Credits left: {(100 - creditsUsed).toFixed(1)}</p>
-        <p>
-          Role split: WK {roleCount.WK}, BAT {roleCount.BAT}, AR {roleCount.AR}, BOWL {roleCount.BOWL}
-        </p>
+        <p>Total selected: {selected.length}</p>
+        <p>Total credits used: {creditsUsed.toFixed(1)}</p>
+        {error ? <p className="text-red-400">{error}</p> : null}
       </section>
 
       <section className="space-y-2">
         {players.map((player) => {
-          const isSelected = selected.includes(player.id);
+          const isSelected = selected.includes(player.player_id);
+
           return (
             <button
-              key={player.id}
+              key={player.player_id}
               type="button"
-              onClick={() => togglePlayer(player.id)}
+              onClick={() => togglePlayer(player.player_id)}
               className={`card w-full text-left ${isSelected ? 'border-indigo-500' : ''}`}
-              disabled={isLocked}
             >
-              <div className="flex items-center justify-between">
-                <p className="font-medium">{player.shortName}</p>
-                <p className="text-sm text-slate-400">{player.credit}</p>
-              </div>
+              <p className="font-medium">{player.name}</p>
               <p className="text-xs text-slate-400">
-                {player.team} • {player.role}
+                {player.role} • {player.team} • Credit: {player.credit}
               </p>
-
-              {isSelected ? (
-                <div className="mt-2 flex gap-2 text-xs">
-                  <button
-                    type="button"
-                    className={`rounded px-2 py-1 ${captain === player.id ? 'bg-indigo-600' : 'bg-slate-700'}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!isLocked) setCaptain(player.id);
-                    }}
-                  >
-                    C
-                  </button>
-                  <button
-                    type="button"
-                    className={`rounded px-2 py-1 ${viceCaptain === player.id ? 'bg-indigo-600' : 'bg-slate-700'}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!isLocked) setViceCaptain(player.id);
-                    }}
-                  >
-                    VC
-                  </button>
-                </div>
-              ) : null}
             </button>
           );
         })}
       </section>
 
-      <button className="btn w-full" onClick={saveTeam} disabled={isLocked}>
+      <button type="button" onClick={handleSaveTeam} disabled={hasValidationError} className="btn w-full disabled:opacity-50">
         Save Team
       </button>
 

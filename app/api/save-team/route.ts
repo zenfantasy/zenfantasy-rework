@@ -1,59 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { hasSupabase, supabase } from '@/lib/supabase';
-import { savedTeams } from '@/lib/store';
 
-type SavePayload = {
-  user: string;
-  matchId: number;
-  playerIds: number[];
+type SaveTeamPayload = {
+  user_id: string;
+  match_id: number;
+  players: number[];
   captain: number;
-  viceCaptain: number;
+  vice_captain: number;
 };
 
-export async function POST(req: NextRequest) {
-  const body = (await req.json()) as SavePayload;
+type SavedTeam = SaveTeamPayload;
 
-  if (!body.user || !body.matchId || !Array.isArray(body.playerIds)) {
+declare global {
+  // eslint-disable-next-line no-var
+  var __savedTeamsBasic: SavedTeam[] | undefined;
+}
+
+if (!global.__savedTeamsBasic) {
+  global.__savedTeamsBasic = [];
+}
+
+export async function POST(req: NextRequest) {
+  const body = (await req.json()) as SaveTeamPayload;
+
+  if (!body.user_id || !body.match_id || !Array.isArray(body.players)) {
     return NextResponse.json({ ok: false, message: 'Invalid payload.' }, { status: 400 });
   }
 
-  if (hasSupabase && supabase) {
-    let userId: number | null = null;
-    const existingUser = await supabase.from('users').select('id').eq('name', body.user).single();
-
-    if (existingUser.data) {
-      userId = existingUser.data.id;
-    } else {
-      const insertedUser = await supabase.from('users').insert({ name: body.user }).select('id').single();
-      userId = insertedUser.data?.id ?? null;
-    }
-
-    if (userId) {
-      const { error } = await supabase.from('teams').upsert({
-        user_id: userId,
-        match_id: body.matchId,
-        player_ids: body.playerIds,
-        captain: body.captain,
-        vice_captain: body.viceCaptain
-      });
-
-      if (!error) {
-        return NextResponse.json({ ok: true, message: 'Team saved to Supabase.' });
-      }
-    }
-  }
-
-  const existingIndex = savedTeams.findIndex((t) => t.user === body.user && t.matchId === body.matchId);
-  const nextItem = {
-    user: body.user,
-    matchId: body.matchId,
-    playerIds: body.playerIds,
+  const entry: SavedTeam = {
+    user_id: body.user_id,
+    match_id: body.match_id,
+    players: body.players,
     captain: body.captain,
-    viceCaptain: body.viceCaptain
+    vice_captain: body.vice_captain
   };
 
-  if (existingIndex >= 0) savedTeams[existingIndex] = nextItem;
-  else savedTeams.push(nextItem);
+  const existingIndex = global.__savedTeamsBasic.findIndex(
+    (item) => item.user_id === body.user_id && item.match_id === body.match_id
+  );
 
-  return NextResponse.json({ ok: true, message: 'Team saved (in-memory).' });
+  if (existingIndex >= 0) {
+    global.__savedTeamsBasic[existingIndex] = entry;
+  } else {
+    global.__savedTeamsBasic.push(entry);
+  }
+
+  console.log('Saved team:', entry);
+
+  return NextResponse.json({ ok: true, message: 'Team saved (temporary memory).' });
 }
