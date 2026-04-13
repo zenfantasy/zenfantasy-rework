@@ -1,27 +1,18 @@
 import { PlayerStats } from './types';
 
-export const scoringRules = {
-  run: 1,
-  four: 4,
-  six: 6,
-  wicket: 30,
-  catch: 8,
-  stumping: 12,
-  runoutAssist: 6,
-  runoutDirectHit: 12
-};
+export function calculatePoints(player: { runs?: number; wickets?: number; catches?: number }) {
+  let points = 0;
 
+  points += player.runs || 0;
+  points += (player.wickets || 0) * 30;
+  points += (player.catches || 0) * 8;
+
+  return points;
+}
+
+// Backward-compatible helpers used by existing routes.
 export function getBasePoints(stats: PlayerStats): number {
-  return (
-    stats.runs * scoringRules.run +
-    stats.fours * scoringRules.four +
-    stats.sixes * scoringRules.six +
-    stats.wickets * scoringRules.wicket +
-    stats.catches * scoringRules.catch +
-    stats.stumpings * scoringRules.stumping +
-    stats.runoutThrower * scoringRules.runoutAssist +
-    stats.runoutDirectHit * scoringRules.runoutDirectHit
-  );
+  return calculatePoints({ runs: stats.runs, wickets: stats.wickets, catches: stats.catches });
 }
 
 export function applyMultiplier(basePoints: number, isCaptain: boolean, isViceCaptain: boolean): number {
