@@ -14,12 +14,33 @@ type SquadPlayer = {
   is_overseas: boolean;
 };
 
+type MatchInfo = {
+  match_id: number;
+  team1: { id: number };
+  team2: { id: number };
+};
+
 export default function TeamBuilderPage() {
   const params = useParams<{ id: string }>();
   const [players, setPlayers] = useState<SquadPlayer[]>([]);
+  const [matchTeams, setMatchTeams] = useState<{ team1Id: number; team2Id: number } | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
   const [error, setError] = useState<string>('');
   const [message, setMessage] = useState<string>('');
+
+  useEffect(() => {
+    const loadMatch = async () => {
+      const res = await fetch('/api/matches', { cache: 'no-store' });
+      const data = (await res.json()) as MatchInfo[];
+      const currentMatch = data.find((match) => match.match_id === Number(params.id));
+
+      if (currentMatch) {
+        setMatchTeams({ team1Id: currentMatch.team1.id, team2Id: currentMatch.team2.id });
+      }
+    };
+
+    loadMatch();
+  }, [params.id]);
 
   useEffect(() => {
     const loadSquads = async () => {
@@ -31,12 +52,18 @@ export default function TeamBuilderPage() {
     loadSquads();
   }, []);
 
+  const filteredPlayers = useMemo(() => {
+    if (!matchTeams) return [];
+
+    return players.filter((p) => p.team_id === matchTeams.team1Id || p.team_id === matchTeams.team2Id);
+  }, [players, matchTeams]);
+
   const creditsUsed = useMemo(() => {
     return selected.reduce((sum, playerId) => {
-      const player = players.find((p) => p.player_id === playerId);
+      const player = filteredPlayers.find((p) => p.player_id === playerId);
       return sum + (player?.credit ?? 0);
     }, 0);
-  }, [players, selected]);
+  }, [filteredPlayers, selected]);
 
   const hasValidationError = selected.length > 11 || creditsUsed > 100;
 
@@ -59,9 +86,24 @@ export default function TeamBuilderPage() {
 
     setSelected((prev) => {
       if (prev.includes(playerId)) {
+        setError('');
         return prev.filter((id) => id !== playerId);
       }
 
+      if (prev.length >= 11) {
+        setError('Max 11 players reached');
+        return prev;
+      }
+
+      const player = filteredPlayers.find((p) => p.player_id === playerId);
+      const nextCredits = creditsUsed + (player?.credit ?? 0);
+
+      if (nextCredits > 100) {
+        setError('Not enough credits');
+        return prev;
+      }
+
+      setError('');
       return [...prev, playerId];
     });
   }
@@ -108,21 +150,22 @@ export default function TeamBuilderPage() {
       </section>
 
       <section className="space-y-2">
-        {players.map((player) => {
+        {filteredPlayers.map((player) => {
           const isSelected = selected.includes(player.player_id);
 
           return (
-            <button
+            <article
               key={player.player_id}
-              type="button"
-              onClick={() => togglePlayer(player.player_id)}
               className={`card w-full text-left ${isSelected ? 'border-indigo-500' : ''}`}
             >
               <p className="font-medium">{player.name}</p>
               <p className="text-xs text-slate-400">
                 {player.role} • {player.team} • Credit: {player.credit}
               </p>
-            </button>
+              <button type="button" onClick={() => togglePlayer(player.player_id)} className="btn mt-3">
+                {isSelected ? 'Remove' : 'Add'}
+              </button>
+            </article>
           );
         })}
       </section>

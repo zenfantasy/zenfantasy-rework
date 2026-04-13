@@ -11,9 +11,11 @@ type RawMatch = {
   match_id: number;
   teama_team_id: number;
   teama_short_name: string;
+  teama_name?: string;
   teama_logo_url: string;
   teamb_team_id: number;
   teamb_short_name: string;
+  teamb_name?: string;
   teamb_logo_url: string;
   date_start_ist: string;
   status_str: string;
@@ -41,22 +43,24 @@ export async function GET() {
     const data = await response.json();
     const items = (data?.response?.items ?? []) as RawMatch[];
 
-    const matches = items.map((item) => ({
-      match_id: item.match_id,
-      team1: {
-        id: item.teama_team_id,
-        short_name: item.teama_short_name,
-        logo: item.teama_logo_url
-      },
-      team2: {
-        id: item.teamb_team_id,
-        short_name: item.teamb_short_name,
-        logo: item.teamb_logo_url
-      },
-      start_time: item.date_start_ist,
-      status: mapMatchStatus(item.status_str),
-      status_note: item.status_note ?? ''
-    }));
+    const matches = items
+      .map((item) => ({
+        match_id: item.match_id,
+        team1: {
+          id: item.teama_team_id,
+          short_name: item.teama_short_name || item.teama_name || 'TBD',
+          logo: item.teama_logo_url
+        },
+        team2: {
+          id: item.teamb_team_id,
+          short_name: item.teamb_short_name || item.teamb_name || 'TBD',
+          logo: item.teamb_logo_url
+        },
+        start_time: item.date_start_ist,
+        status: mapMatchStatus(item.status_str),
+        status_note: item.status_note ?? ''
+      }))
+      .filter((item) => item.status === 'Upcoming' || item.status === 'Live');
 
     return NextResponse.json(matches);
   } catch {

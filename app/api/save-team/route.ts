@@ -34,14 +34,16 @@ export async function POST(req: NextRequest) {
     vice_captain: body.vice_captain
   };
 
-  const existingIndex = global.__savedTeamsBasic.findIndex(
+  const savedTeams = global.__savedTeamsBasic ?? [];
+
+  const existingIndex = savedTeams.findIndex(
     (item) => item.user_id === body.user_id && item.match_id === body.match_id
   );
 
   if (existingIndex >= 0) {
-    global.__savedTeamsBasic[existingIndex] = entry;
+    savedTeams[existingIndex] = entry;
   } else {
-    global.__savedTeamsBasic.push(entry);
+    savedTeams.push(entry);
   }
 
   console.log('Saved team:', entry);
