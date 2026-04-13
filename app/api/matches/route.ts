@@ -10,24 +10,15 @@ const API_HEADERS = {
 type RawMatch = {
   match_id: number;
   teama_team_id: number;
-  teama_short_name: string;
-  teama_name?: string;
+  teama_short_name: string | null;
   teama_logo_url: string;
   teamb_team_id: number;
-  teamb_short_name: string;
-  teamb_name?: string;
+  teamb_short_name: string | null;
   teamb_logo_url: string;
   date_start_ist: string;
   status_str: string;
   status_note: string;
 };
-
-function mapMatchStatus(status: string): string {
-  const normalized = status.toLowerCase();
-  if (normalized.includes('live')) return 'Live';
-  if (normalized.includes('complete') || normalized.includes('result')) return 'Completed';
-  return 'Upcoming';
-}
 
 export async function GET() {
   try {
@@ -44,23 +35,25 @@ export async function GET() {
     const items = (data?.response?.items ?? []) as RawMatch[];
 
     const matches = items
-      .map((item) => ({
-        match_id: item.match_id,
+      .filter((match) => match.teama_short_name !== null && match.teamb_short_name !== null)
+      .map((match) => ({
+        match_id: match.match_id,
         team1: {
-          id: item.teama_team_id,
-          short_name: item.teama_short_name || item.teama_name || 'TBD',
-          logo: item.teama_logo_url
+          id: match.teama_team_id,
+          short_name: match.teama_short_name,
+          logo: match.teama_logo_url
         },
         team2: {
-          id: item.teamb_team_id,
-          short_name: item.teamb_short_name || item.teamb_name || 'TBD',
-          logo: item.teamb_logo_url
+          id: match.teamb_team_id,
+          short_name: match.teamb_short_name,
+          logo: match.teamb_logo_url
         },
-        start_time: item.date_start_ist,
-        status: mapMatchStatus(item.status_str),
-        status_note: item.status_note ?? ''
-      }))
-      .filter((item) => item.status === 'Upcoming' || item.status === 'Live');
+        start_time: match.date_start_ist,
+        status: match.status_str,
+        status_note: match.status_note
+      }));
+
+    console.log(JSON.stringify(data, null, 2));
 
     return NextResponse.json(matches);
   } catch {

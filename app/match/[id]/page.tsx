@@ -15,55 +15,51 @@ type SquadPlayer = {
 };
 
 type MatchInfo = {
-  match_id: number;
-  team1: { id: number };
-  team2: { id: number };
+  match_id: number | string;
+  team1: { id: number; short_name: string };
+  team2: { id: number; short_name: string };
 };
 
 export default function TeamBuilderPage() {
   const params = useParams<{ id: string }>();
   const [players, setPlayers] = useState<SquadPlayer[]>([]);
-  const [matchTeams, setMatchTeams] = useState<{ team1Id: number; team2Id: number } | null>(null);
+  const [match, setMatch] = useState<MatchInfo | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
   const [error, setError] = useState<string>('');
   const [message, setMessage] = useState<string>('');
 
   useEffect(() => {
-    const loadMatch = async () => {
-      const res = await fetch('/api/matches', { cache: 'no-store' });
-      const data = (await res.json()) as MatchInfo[];
-      const currentMatch = data.find((match) => match.match_id === Number(params.id));
+    const loadData = async () => {
+      const matchesRes = await fetch('/api/matches', { cache: 'no-store' });
+      const matches = (await matchesRes.json()) as MatchInfo[];
+      const currentMatch = matches.find((m) => m.match_id == params.id);
 
-      if (currentMatch) {
-        setMatchTeams({ team1Id: currentMatch.team1.id, team2Id: currentMatch.team2.id });
+      setMatch(currentMatch ?? null);
+
+      if (!currentMatch) {
+        setPlayers([]);
+        return;
       }
+
+      const squadsRes = await fetch('/api/squads', { cache: 'no-store' });
+      const allPlayers = (await squadsRes.json()) as SquadPlayer[];
+
+      const filtered = allPlayers.filter(
+        (p) => p.team_id === currentMatch.team1.id || p.team_id === currentMatch.team2.id
+      );
+
+      setPlayers(filtered);
     };
 
-    loadMatch();
+    loadData();
   }, [params.id]);
-
-  useEffect(() => {
-    const loadSquads = async () => {
-      const res = await fetch('/api/squads', { cache: 'no-store' });
-      const data = (await res.json()) as SquadPlayer[];
-      setPlayers(data);
-    };
-
-    loadSquads();
-  }, []);
-
-  const filteredPlayers = useMemo(() => {
-    if (!matchTeams) return [];
-
-    return players.filter((p) => p.team_id === matchTeams.team1Id || p.team_id === matchTeams.team2Id);
-  }, [players, matchTeams]);
 
   const creditsUsed = useMemo(() => {
     return selected.reduce((sum, playerId) => {
-      const player = filteredPlayers.find((p) => p.player_id === playerId);
+      const player = players.find((p) => p.player_id === playerId);
       return sum + (player?.credit ?? 0);
     }, 0);
-  }, [filteredPlayers, selected]);
+  }, [players, selected]);
 
   const hasValidationError = selected.length > 11 || creditsUsed > 100;
 
@@ -95,7 +91,7 @@ export default function TeamBuilderPage() {
         return prev;
       }
 
-      const player = filteredPlayers.find((p) => p.player_id === playerId);
+      const player = players.find((p) => p.player_id === playerId);
       const nextCredits = creditsUsed + (player?.credit ?? 0);
 
       if (nextCredits > 100) {
@@ -142,6 +138,11 @@ export default function TeamBuilderPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-bold">Team Builder - Match {params.id}</h1>
+      {match ? (
+        <p className="text-sm text-slate-300">
+          {match.team1.short_name} vs {match.team2.short_name}
+        </p>
+      ) : null}
 
       <section className="card space-y-1 text-sm">
         <p>Total selected: {selected.length}</p>
@@ -150,7 +151,7 @@ export default function TeamBuilderPage() {
       </section>
 
       <section className="space-y-2">
-        {filteredPlayers.map((player) => {
+        {players.map((player) => {
           const isSelected = selected.includes(player.player_id);
 
           return (
